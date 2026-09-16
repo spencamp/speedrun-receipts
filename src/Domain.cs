@@ -25,17 +25,22 @@ namespace LiveSplit.ThermalReceipt
         public readonly TimeSpan? Final, PreviousPB, PreviousBest, NewBest;
         public readonly int Attempt;
         public readonly DateTime Finished;
+        public readonly bool Archive, HistoricalPbKnown;
+        public readonly DateTime? Reprinted;
+        public readonly bool RunDateKnown;
         public readonly ReadOnlyCollection<ReceiptSplit> Splits;
         public readonly ReadOnlyCollection<TimeSpan> Recent;
         public ReceiptRun(string game, string category, TimeSpan? final, TimeSpan? pb, TimeSpan? oldBest,
             TimeSpan? newBest, string comparison, string method, int attempt, DateTime finished,
-            IEnumerable<ReceiptSplit> splits, IEnumerable<TimeSpan> recent, string fortune)
+            IEnumerable<ReceiptSplit> splits, IEnumerable<TimeSpan> recent, string fortune,
+            bool archive = false, DateTime? reprinted = null, bool runDateKnown = true, bool historicalPbKnown = true)
         {
             Game = game; Category = category; Final = final; PreviousPB = pb; PreviousBest = oldBest;
+            Archive = archive; Reprinted = reprinted; RunDateKnown = runDateKnown; HistoricalPbKnown = historicalPbKnown;
             NewBest = newBest; Comparison = comparison; TimingMethod = method; Attempt = attempt; Finished = finished;
             Splits = Array.AsReadOnly(splits.ToArray()); Recent = Array.AsReadOnly(recent.Take(10).ToArray()); Fortune = fortune;
         }
-        public string Result { get { return !Final.HasValue ? "NORMAL" : !PreviousPB.HasValue || Final < PreviousPB ? "PB" : Final == PreviousPB ? "TIE" : "NORMAL"; } }
+        public string Result { get { return !Final.HasValue || (Archive && !HistoricalPbKnown) ? "NORMAL" : !PreviousPB.HasValue || Final < PreviousPB ? "PB" : Final == PreviousPB ? "TIE" : "NORMAL"; } }
         public int GoldCount { get { return Splits.Count(s => s.Gold); } }
         public bool BestImproved { get { return NewBest.HasValue && PreviousBest.HasValue && NewBest < PreviousBest; } }
         public TimeSpan? Average { get { return Recent.Count < 2 ? (TimeSpan?)null : TimeSpan.FromTicks((long)Recent.Average(t => (decimal)t.Ticks)); } }

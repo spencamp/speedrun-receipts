@@ -61,10 +61,11 @@ internal static class Tests
     private sealed class Trace
     {
         public readonly List<string> Lines = new List<string>();
-        public int Images, FontBCommands, ReverseCommands, DoubleCommands;
-        public Trace(byte[] bytes)
+        public int Images, FontBCommands, ReverseCommands, DoubleCommands, Cuts;
+        public Trace(byte[] bytes, PrinterProfile profile = null, bool expectCut = false, bool expectFortunes = true)
         {
-            int columns = 32, multiplier = 1; bool fontB = false;
+            profile = profile ?? PrinterProfiles.Pos58;
+            int columns = profile.FontAColumns, multiplier = 1; bool fontB = false;
             var line = new StringBuilder();
             for (int i = 0; i < bytes.Length;)
             {
@@ -76,19 +77,20 @@ internal static class Tests
                     if (b == 27 && command == 42)
                     {
                         Assert(line.Length == 0, "Inline image forbidden"); Assert(bytes[i++] == 33);
-                        int width = bytes[i++] + 256 * bytes[i++]; Assert(width == 320); i += width * 3; Images++; continue;
+                        int width = bytes[i++] + 256 * bytes[i++]; Assert(profile.Supports24DotImages); Assert(width == profile.PrintableDots); Assert(i + width * 3 <= bytes.Length); i += width * 3; Images++; continue;
                     }
                     byte value = bytes[i++];
-                    if (b == 27 && command == 77) { fontB = value == 1; columns = fontB ? 42 : 32; if (fontB) FontBCommands++; }
+                    if (b == 27 && command == 77) { fontB = value == 1; columns = fontB ? profile.FontBColumns : profile.FontAColumns; if (fontB) FontBCommands++; }
                     else if (b == 29 && command == 33) { Assert(value == 0 || value == 17); multiplier = value == 17 ? 2 : 1; if (multiplier == 2) DoubleCommands++; }
-                    else if (b == 29 && command == 66) { if (value == 1) ReverseCommands++; }
+                    else if (b == 29 && command == 66) { Assert(profile.SupportsReverse); if (value == 1) ReverseCommands++; }
+                    else if (b == 29 && command == 86) { Assert(profile.SupportsCut && expectCut && value == 0); Cuts++; }
                     else Assert(b == 27 && (command == 97 || command == 69 || command == 51), "Unsafe/unrecognized ESC/POS command");
                 }
                 else if (b == 10) { Assert(line.Length * multiplier <= columns, "Line wraps: " + line); Lines.Add(line.ToString()); line.Clear(); }
                 else { Assert(b >= 32 && b <= 126, "Non-ASCII/control text"); line.Append((char)b); }
             }
-            Assert(Images == 2); Assert(FontBCommands > 0); Assert(ReverseCommands >= 2); Assert(DoubleCommands > 0);
-            Assert(Lines[0] == new string('-', 32));
+            Assert(Images == (profile.Supports24DotImages && expectFortunes ? 2 : 0)); Assert(FontBCommands > 0); Assert(profile.SupportsReverse ? ReverseCommands >= 2 : ReverseCommands == 0); Assert(DoubleCommands > 0); Assert(Cuts == (expectCut ? 1 : 0));
+            Assert(Lines[0] == new string('-', profile.FontAColumns));
         }
         public string Text { get { return String.Join("\n", Lines); } }
     }
@@ -104,8 +106,218 @@ internal static class Tests
                 T(final / count), T(final * (i + 1) / count), i == 0 ? T(0) : T(-13.3), false, i < golds)), new[] { T(final) }, fortune);
     }
     [STAThread]
+    private static Run ArchiveFixture()
+    {
+        var run = new Run(new StandardComparisonGeneratorsFactory());
+        run.Add(new Segment("First")); run.Add(new Segment("Second")); run.Add(new Segment("Final"));
+        AddArchive(run, 1, 100, 100, 100);
+        AddArchive(run, 2, 90, 95, 95);
+        AddArchive(run, 3, 110, 90, 100);
+        AddArchive(run, 4, 90, 95, 95);
+        AddArchive(run, 5, 80, 80, 80);
+        foreach (var s in run) { s.BestSegmentTime = TT(80); s.PersonalBestSplitTime = TT(1); }
+        return run;
+    }
+    private static void AddArchive(IRun run, int id, params double[] durations)
+    {
+        var date = new AtomicDateTime(new DateTime(2026, 9, id, 12, 0, 0, DateTimeKind.Utc), false);
+        run.AttemptHistory.Add(new Attempt(id, TT(durations.Sum()), date, date, null));
+        for (int i = 0; i < durations.Length; i++) run[i].SegmentHistory.Add(id, TT(durations[i]));
+    }
+    private static ReceiptRun Archive(IRun run, int id, DateTime? printed = null)
+    { return new HistoricalReceiptReconstructor().Reconstruct(run, id, TimingMethod.GameTime, printed ?? new DateTime(2026, 9, 16), "Fresh fortune."); }
+    private static void ArchiveTests()
+    {
+        Test("Archive normal uses PB at run and historical difference", () => { var r = Archive(ArchiveFixture(), 3); Assert(r.Result == "NORMAL" && r.PreviousPB == T(280)); Assert(Render(r).Text.Contains("PB AT RUN") && Render(r).Text.Contains("+20.0")); });
+        Test("Archive PB no longer current", () => { var r = Archive(ArchiveFixture(), 2); Assert(r.Result == "PB" && r.PreviousPB == T(300)); Assert(Render(r).Text.Contains("PREVIOUS PB")); });
+        Test("Archive PB remains current", () => Assert(Archive(ArchiveFixture(), 5).Result == "PB"));
+        Test("Archive tied PB", () => Assert(Archive(ArchiveFixture(), 4).Result == "TIE"));
+        Test("Archive future records and current comparisons cannot contaminate", () => { var run = ArchiveFixture(); var before = new ReceiptRenderer().Render(Archive(run, 3)); AddArchive(run, 6, 1, 1, 1); run[0].BestSegmentTime = TT(1); run[0].PersonalBestSplitTime = TT(1); Assert(before.SequenceEqual(new ReceiptRenderer().Render(Archive(run, 3)))); });
+        Test("Archive fewer than ten average excludes later completions", () => { var r = Archive(ArchiveFixture(), 3); Assert(r.Recent.Count == 3 && r.Average == TimeSpan.FromTicks((T(300).Ticks + T(280).Ticks + T(300).Ticks) / 3)); });
+        Test("Archive ten run average", () => { var run = ArchiveFixture(); for (int i = 6; i <= 15; i++) AddArchive(run, i, i, i, i); var r = Archive(run, 14); Assert(r.Recent.Count == 10 && r.Recent[0] == T(42) && r.Recent[9] == T(240)); });
+        Test("Archive historical golds survive newer bests", () => Assert(Archive(ArchiveFixture(), 2).GoldCount == 3));
+        Test("Archive equal earlier best is not gold", () => Assert(Archive(ArchiveFixture(), 4).GoldCount == 0));
+        Test("Archive only improved historical segment is gold", () => { var r = Archive(ArchiveFixture(), 3); Assert(r.GoldCount == 1 && r.Splits[1].Gold); });
+        Test("Archive unreliable Sum of Best omitted", () => { var r = Archive(ArchiveFixture(), 2); Assert(!r.PreviousBest.HasValue && !r.NewBest.HasValue && !Render(r).Text.Contains("SUM OF BEST")); });
+        Test("Archive skips retain combined cumulative but no fabricated segment or gold", () => { var run = ArchiveFixture(); run[0].SegmentHistory[3] = default(Time); run[1].SegmentHistory[3] = TT(200); var r = Archive(run, 3); Assert(r.Splits[0].Skipped && !r.Splits[1].Segment.HasValue && r.Splits[1].Cumulative == T(200) && !r.Splits[1].Gold); Assert(Render(r).Text.Contains("SKIP")); });
+        Test("Archive split comparison is historical PB", () => { var r = Archive(ArchiveFixture(), 3); Assert(r.Splits[0].Delta == T(20) && r.Splits[2].Delta == T(20) && Render(r).Text.Contains("VS PB")); });
+        Test("Archive original history attempt ID", () => Assert(Archive(ArchiveFixture(), 3).Attempt == 3));
+        Test("Archive historical run date and later reprint date", () => { var text = Render(Archive(ArchiveFixture(), 3)).Text; Assert(text.Contains("RUN SEP 3 2026") && text.Contains("REPRINTED SEP 16 2026") && text.Contains("ARCHIVE REPRINT")); });
+        Test("Archive same day omits reprint date", () => { var run = ArchiveFixture(); var date = run.AttemptHistory.First(a => a.Index == 3).Ended.Value.Time.ToLocalTime(); Assert(!Render(Archive(run, 3, date.AddMinutes(1))).Text.Contains("REPRINTED")); });
+        Test("Archive missing date is explicit", () => { var run = ArchiveFixture(); var a = run.AttemptHistory[2]; a.Ended = null; run.AttemptHistory[2] = a; Assert(Render(Archive(run, 3)).Text.Contains("RUN DATE UNKNOWN")); });
+        Test("Archive incomplete attempts rejected and hidden", () => { var run = ArchiveFixture(); run.AttemptHistory.Add(new Attempt(6, default(Time), null, null, null)); Assert(new HistoricalReceiptReconstructor().Completed(run, TimingMethod.RealTime).Length == 5); bool rejected = false; try { Archive(run, 6); } catch (InvalidOperationException) { rejected = true; } Assert(rejected); });
+        Test("Archive unavailable timing method rejected", () => { var run = ArchiveFixture(); var a = run.AttemptHistory[2]; a.Time = new Time(T(300), null); run.AttemptHistory[2] = a; bool rejected = false; try { Archive(run, 3); } catch (InvalidOperationException) { rejected = true; } Assert(rejected); });
+        Test("Archive missing history never fabricated or classified skip", () => { var run = ArchiveFixture(); run[0].SegmentHistory.Remove(3); var r = Archive(run, 3); Assert(!r.Splits[0].Skipped && !r.Splits[0].Cumulative.HasValue && !r.Splits[1].Segment.HasValue && r.Final == T(300)); });
+        Test("Archive first retained completion has unknown prior PB", () => { var r = Archive(ArchiveFixture(), 1); Assert(r.Result == "NORMAL" && !r.Average.HasValue && !r.HistoricalPbKnown); });
+        Test("Archive history list sorts indices rather than storage or timestamp", () => { var run = ArchiveFixture(); var a = run.AttemptHistory[0]; run.AttemptHistory.RemoveAt(0); run.AttemptHistory.Add(a); Assert(new HistoricalReceiptReconstructor().Completed(run, TimingMethod.GameTime)[0].Index == 5 && Archive(run, 3).PreviousPB == T(280)); });
+        Test("Archive source data unchanged", () => { var run = ArchiveFixture(); var time = run[0].PersonalBestSplitTime; Archive(run, 3); Assert(run[0].PersonalBestSplitTime.Equals(time) && run[0].SegmentHistory.Count == 5); });
+        Test("Archive widths safe for every profile", () => { foreach (var p in PrinterProfiles.All) new Trace(new ReceiptRenderer(p).Render(Archive(ArchiveFixture(), 3)), p); });
+        Test("Archive explicit print gets fresh shuffle bag fortune and isolates live claims", () => {
+            using (var f = new Fixture()) using (var c = new ReceiptComponent(f.State, new FakePrinter())) {
+                var run = ArchiveFixture(); foreach (var a in run.AttemptHistory) f.State.Run.AttemptHistory.Add(a);
+                for (int i = 0; i < 3; i++) foreach (var h in run[i].SegmentHistory) f.State.Run[i].SegmentHistory.Add(h.Key, h.Value);
+                var settings = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); settings.Queue = "fake";
+                string bag = settings.Fortunes.Save(); c.PrintArchive(2, TimingMethod.GameTime); Assert(settings.Fortunes.Save() != bag);
+                f.Finish(); Assert(f.Receipts.Count == 1); f.Timer.UndoSplit(); f.Split(270); Assert(f.Receipts.Count == 1);
+            }
+        });
+        Test("Archive missing queue rejects before fortune consumption", () => { using (var f = new Fixture()) { var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) { var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); string bag = s.Fortunes.Save(); c.PrintArchive(1, TimingMethod.GameTime); Assert(p.Count == 0 && s.Fortunes.Save() == bag); } } });
+        Test("Archive printer failure stays in dispatcher", () => { using (var f = new Fixture()) { var p = new FakePrinter { Fail = true }; f.State.Run.AttemptHistory.Add(new Attempt(1, TT(300), null, null, null)); using (var c = new ReceiptComponent(f.State, p)) { var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); s.Queue = "fake"; c.PrintArchive(1, TimingMethod.GameTime); Assert(p.Called.WaitOne(3000)); Assert(f.State.Run.AttemptHistory.Count == 1); } } });
+    }
+
     private static int Main()
     {
+        Test("Fortunes default on and disabled setting persists", () => {
+            using (var s = new ReceiptSettings()) using (var copy = new ReceiptSettings()) {
+                Assert(s.PrintFortunes); s.PrintFortunes = false; copy.Restore(s.Save(new XmlDocument())); Assert(!copy.PrintFortunes);
+                copy.Restore(null); Assert(copy.PrintFortunes);
+                var xml = new XmlDocument(); xml.LoadXml("<Settings><PrintFortunes>invalid</PrintFortunes></Settings>"); copy.Restore(xml.DocumentElement); Assert(copy.PrintFortunes);
+            }
+        });
+        Test("Fortunes off removes text and both graphic or text borders only", () => {
+            foreach (var profile in new[] { PrinterProfiles.Pos58, PrinterProfiles.Generic80 }) {
+                var run = Custom(fortune: "UNIQUE FORTUNE TEXT");
+                var on = new Trace(new ReceiptRenderer(profile).Render(run), profile);
+                var off = new Trace(new ReceiptRenderer(profile, printFortunes: false).Render(run), profile, expectFortunes: false);
+                Assert(on.Text.Contains("UNIQUE FORTUNE TEXT") && !off.Text.Contains("UNIQUE FORTUNE TEXT"));
+                int metadataEnd = on.Lines.IndexOf("REAL TIME") + 2;
+                Assert(on.Lines.Take(metadataEnd).SequenceEqual(off.Lines.Take(metadataEnd)));
+                Assert(off.Lines.Skip(metadataEnd).SequenceEqual(new[] { new string('-', profile.FontAColumns), "", "", "" }));
+            }
+        });
+        Test("Automatic and manual receipts honor fortunes off without consuming bag", () => {
+            using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) {
+                var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); s.Queue = "fake"; s.PrintingEnabled = true; s.PrintFortunes = false;
+                s.Fortunes.Next(); string bag = s.Fortunes.Save(); f.Finish();
+                var d = (PrintDispatcher)typeof(ReceiptComponent).GetField("dispatcher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(c);
+                d.Drain.Wait(); Assert(p.Count == 1); new Trace(p.Last, expectFortunes: false); Assert(s.Fortunes.Save() == bag);
+                var button = s.Controls[0].Controls.OfType<Button>().Single(b => b.Text == "Print Test Receipt");
+                typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty });
+                d.Drain.Wait(); Assert(p.Count == 2); new Trace(p.Last, expectFortunes: false); Assert(s.Fortunes.Save() == bag);
+                s.PrintFortunes = true; f.Timer.Reset(); f.Finish(); d.Drain.Wait(); Assert(p.Count == 3); new Trace(p.Last); Assert(s.Fortunes.Save() != bag);
+            } }
+        });
+        Test("Confirmation defaults off and persists in layout settings", () => {
+            using (var s = new ReceiptSettings()) using (var copy = new ReceiptSettings()) {
+                Assert(!s.ConfirmBeforePrinting); s.ConfirmBeforePrinting = true;
+                copy.Restore(s.Save(new XmlDocument())); Assert(copy.ConfirmBeforePrinting);
+                var legacy = new XmlDocument(); legacy.LoadXml("<Settings><Enabled>true</Enabled></Settings>");
+                copy.Restore(legacy.DocumentElement); Assert(!copy.ConfirmBeforePrinting);
+                legacy.LoadXml("<Settings><ConfirmBeforePrinting>invalid</ConfirmBeforePrinting></Settings>");
+                copy.Restore(legacy.DocumentElement); Assert(!copy.ConfirmBeforePrinting);
+            }
+        });
+        foreach (bool confirmation in new[] { false, true }) foreach (bool answer in new[] { false, true })
+        {
+            bool ask = confirmation, accept = answer;
+            Test("Completed receipt confirmation enabled=" + ask + " answer=" + accept, () => {
+                using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); int prompts = 0;
+                    using (var c = new ReceiptComponent(f.State, p, () => { prompts++; return accept; })) {
+                        var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical);
+                        s.Queue = "fake"; s.PrintingEnabled = true; s.ConfirmBeforePrinting = ask;
+                        f.Finish(); Replay(f.State, "OnSplit"); f.Timer.UndoSplit(); f.Split(280);
+                        var d = (PrintDispatcher)typeof(ReceiptComponent).GetField("dispatcher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(c);
+                        d.Drain.Wait(); Assert(prompts == (ask ? 1 : 0)); Assert(p.Count == (!ask || accept ? 1 : 0));
+                        f.Timer.Reset(); f.Finish(); d.Drain.Wait();
+                        Assert(prompts == (ask ? 2 : 0)); Assert(p.Count == (!ask || accept ? 2 : 0));
+                    }
+                }
+            });
+        }
+        Test("No confirmation when disabled or queue missing; test receipt stays explicit", () => {
+            using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); int prompts = 0;
+                using (var c = new ReceiptComponent(f.State, p, () => { prompts++; return false; })) {
+                    var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); s.ConfirmBeforePrinting = true;
+                    s.PrintingEnabled = true; f.Finish(); Assert(prompts == 0);
+                    f.Timer.Reset(); s.Queue = "fake"; s.PrintingEnabled = false; f.Finish(); Assert(prompts == 0);
+                    var button = s.Controls[0].Controls.OfType<Button>().Single(b => b.Text == "Print Test Receipt");
+                    typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty });
+                    var d = (PrintDispatcher)typeof(ReceiptComponent).GetField("dispatcher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(c);
+                    d.Drain.Wait(); Assert(p.Count == 1 && prompts == 0);
+                }
+            }
+        });
+        Test("POS-58 byte-for-byte V1 baseline", () => {
+            var r = SyntheticReceipt.Create();
+            var fixedTime = new ReceiptRun(r.Game, r.Category, r.Final, r.PreviousPB, r.PreviousBest, r.NewBest, r.Comparison, r.TimingMethod,
+                r.Attempt, new DateTime(2026, 9, 16, 7, 6, 0), r.Splits, r.Recent, r.Fortune);
+            Assert(File.ReadAllBytes("tests/fixtures/pos58-v1.bin").SequenceEqual(new ReceiptRenderer(PrinterProfiles.Pos58).Render(fixedTime)));
+        });
+        Test("Blank queue rejected before dispatch", () => { var p = new FakePrinter(); var d = new PrintDispatcher(p); foreach (string queue in new[] { null, "", "  " }) d.Submit(queue, new byte[] { 1 }); d.Drain.Wait(); Assert(p.Count == 0); Assert(d.Status.Contains("nothing printed")); });
+        Test("Queue enumeration never selects a printer and preserves explicit queue", () => {
+            using (var s = new ReceiptSettings()) {
+                Assert(s.Queue == ""); s.SetAvailableQueues(new[] { "Office Laser", "Microsoft Print to PDF", "Receipt" }); Assert(s.Queue == "");
+                s.Queue = "Receipt"; s.SetAvailableQueues(new[] { "Office Laser" }); Assert(s.Queue == "Receipt");
+                var d = new XmlDocument(); using (var copy = new ReceiptSettings()) { copy.Restore(s.Save(d)); Assert(copy.Queue == "Receipt"); copy.Restore(null); Assert(copy.Queue == ""); }
+            }
+        });
+        Test("Unconfigured manual and automatic paths do not print", () => {
+            using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) {
+                var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); s.PrintingEnabled = true;
+                var button = s.Controls[0].Controls.OfType<Button>().Single(b => b.Text == "Print Test Receipt"); Assert(!button.Enabled);
+                typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty });
+                f.Finish(); var dispatcher = (PrintDispatcher)typeof(ReceiptComponent).GetField("dispatcher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(c);
+                dispatcher.Drain.Wait(); Assert(p.Count == 0);
+            } }
+        });
+        foreach (var selected in new[] { PrinterProfiles.Pos58, PrinterProfiles.Generic58, PrinterProfiles.Generic80,
+            new PrinterProfile("custom", "Custom", 480, 40, 53, true, true), new PrinterProfile("custom", "Narrow", 192, 24, 32, false, false) })
+        {
+            var profile = selected;
+            Test(profile.DisplayName + " widths, ASCII, rules, borders and safe commands", () => {
+                var trace = new Trace(new ReceiptRenderer(profile).Render(Custom(game: "Pokémon★" + new string('G', 150), category: new string('C', 150))), profile);
+                Assert(trace.Lines.Contains(new string('-', profile.FontBColumns)));
+                Assert(trace.Lines.Count(l => l == new string('-', profile.FontAColumns)) >= 2);
+                Assert(trace.Lines.Any(l => l.Contains("SPLITS") && l.Length == profile.FontAColumns));
+                int begin = trace.Lines.IndexOf(new string('-', profile.FontBColumns));
+                Assert(trace.Lines.Skip(begin + 1).Take(3).All(l => l.Length == profile.FontBColumns));
+                Assert(trace.Text.Contains("..."));
+                new Trace(new ReceiptRenderer(profile).Render(Custom(final: 900000000, pb: 900000001, comparison: "Long comparison")), profile);
+            });
+        }
+        Test("Wider profiles allocate extra cells to split names and retain numeric columns", () => {
+            var a = new Trace(new ReceiptRenderer(PrinterProfiles.Generic58).Render(Custom()), PrinterProfiles.Generic58);
+            var b = new Trace(new ReceiptRenderer(PrinterProfiles.Generic80).Render(Custom()), PrinterProfiles.Generic80);
+            string rowA = a.Lines[a.Lines.IndexOf(new string('-', 42)) + 1], rowB = b.Lines[b.Lines.IndexOf(new string('-', 64)) + 1];
+            Assert(rowA.Substring(20) == rowB.Substring(42)); Assert(rowA.Substring(0, 20).EndsWith("..."));
+            Assert(rowB.StartsWith("  A very long split name that needs"));
+        });
+        Test("Independent reverse and image fallbacks", () => {
+            foreach (bool reverse in new[] { false, true }) foreach (bool images in new[] { false, true }) {
+                var p = new PrinterProfile("custom", "Custom", 513, 48, 64, reverse, images);
+                var t = new Trace(new ReceiptRenderer(p).Render(Custom()), p); Assert(t.Text.Contains("NEW PB"));
+            }
+        });
+        Test("Cut requires both support and explicit opt-in; raster and Unicode never emitted", () => {
+            var p = new PrinterProfile("custom", "Custom", 576, 48, 64, false, false, true, true, true);
+            new Trace(new ReceiptRenderer(p).Render(Custom(game: "Pokémon★")), p);
+            new Trace(new ReceiptRenderer(p, true).Render(Custom()), p, true);
+            new Trace(new ReceiptRenderer(PrinterProfiles.Generic80, true).Render(Custom()), PrinterProfiles.Generic80);
+        });
+        Test("Profile and custom settings persist; malformed widths safe", () => {
+            var xml = new XmlDocument(); xml.LoadXml("<Settings><PrinterQueue>Explicit</PrinterQueue><PrinterProfile>custom</PrinterProfile><PrintableDots>513</PrintableDots><FontAColumns>40</FontAColumns><FontBColumns>53</FontBColumns><SupportsReverse>true</SupportsReverse><Supports24DotImages>true</Supports24DotImages><SupportsCut>true</SupportsCut><CutAfterReceipt>true</CutAfterReceipt></Settings>");
+            using (var s = new ReceiptSettings()) using (var copy = new ReceiptSettings()) {
+                s.Restore(xml.DocumentElement); copy.Restore(s.Save(new XmlDocument()));
+                Assert(copy.ProfileId == "custom" && copy.Queue == "Explicit" && copy.CutAfterReceipt);
+                var p = copy.SelectedProfile; Assert(p.PrintableDots == 513 && p.FontAColumns == 40 && p.FontBColumns == 53 && p.SupportsReverse && p.Supports24DotImages && p.SupportsCut);
+                s.ProfileId = "generic80"; copy.Restore(s.Save(new XmlDocument())); Assert(copy.ProfileId == "generic80" && !copy.CutAfterReceipt);
+                copy.ProfileId = "custom"; Assert(copy.SelectedProfile.PrintableDots == 513);
+                xml.LoadXml("<Settings><Enabled>true</Enabled><PrinterProfile>unknown</PrinterProfile><PrintableDots>-1</PrintableDots><FontAColumns>9999</FontAColumns><FontBColumns>oops</FontBColumns></Settings>"); copy.Restore(xml.DocumentElement); Assert(!copy.PrintingEnabled && copy.ProfileId == "generic58");
+                copy.ProfileId = "custom"; Assert(copy.SelectedProfile.PrintableDots == 384);
+            }
+        });
+        Test("Saved 80mm profile used by automatic and manual production paths", () => {
+            using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) {
+                var xml = new XmlDocument(); xml.LoadXml("<Settings><Enabled>true</Enabled><PrinterQueue>fake</PrinterQueue><PrinterProfile>generic80</PrinterProfile></Settings>");
+                c.SetSettings(xml.DocumentElement); f.Finish();
+                var dispatcher = (PrintDispatcher)typeof(ReceiptComponent).GetField("dispatcher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(c);
+                dispatcher.Drain.Wait(); Assert(p.Count == 1); new Trace(p.Last, PrinterProfiles.Generic80);
+                var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); s.PrintingEnabled = false;
+                var button = s.Controls[0].Controls.OfType<Button>().Single(b => b.Text == "Print Test Receipt");
+                typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty });
+                dispatcher.Drain.Wait(); Assert(p.Count == 2); new Trace(p.Last, PrinterProfiles.Generic80);
+            } }
+        });
         Test("Normal run", () => { var r = Custom(1200); Assert(r.Result == "NORMAL"); var t = Render(r); Assert(t.ReverseCommands == 2); Assert(t.Text.Contains("PB ")); Assert(!t.Text.Contains("PREVIOUS PB")); });
         Test("New PB preserves previous record", () => { var r = Custom(); Assert(r.Result == "PB"); var t = Render(r); Assert(t.Text.Contains("NEW PB 18:42.37")); Assert(t.Text.Contains("PREVIOUS PB")); Assert(t.Text.Contains("18:55.62")); Assert(t.ReverseCommands == 3); });
         Test("Exact PB tie retains PB label", () => { var r = Custom(1135.62); Assert(r.Result == "TIE"); var t = Render(r); Assert(t.Text.Contains("PB TIED 18:55.62")); Assert(!t.Text.Contains("PREVIOUS PB")); Assert(t.Text.Contains("+/-0.0")); Assert(t.ReverseCommands == 3); });
@@ -160,8 +372,9 @@ internal static class Tests
         Test("Disposed capture detaches events", () => { using (var f = new Fixture()) { f.Capture.Dispose(); f.Finish(); Assert(f.Receipts.Count == 0); } });
         Test("Earlier completion subscriber updating history", () => { using (var f = new Fixture()) { f.Capture.Dispose(); f.State.OnSplit += delegate { if (f.State.CurrentPhase == TimerPhase.Ended) f.Timer.UpdateTimes(); }; f.Capture = f.NewCapture(); f.Finish(240); var r = f.Receipts.Single(); Assert(r.PreviousPB == T(300)); Assert(r.GoldCount == 3); Assert(r.Recent.Count == 1); Assert(r.Splits.Last().Delta == T(-60)); } });
         Test("Enabled component end-to-end with fake printer", () => { using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) { var xml = new XmlDocument(); xml.LoadXml("<Settings><Enabled>true</Enabled><PrinterQueue>fake</PrinterQueue></Settings>"); c.SetSettings(xml.DocumentElement); f.Finish(); Assert(p.Called.WaitOne(5000)); Replay(f.State, "OnSplit"); Assert(p.Count == 1); new Trace(p.Last); f.Timer.Reset(); Assert(p.Count == 1); } } });
-        Test("Manual button uses fake queue while auto printing disabled", () => { using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) { var settings = c.GetSettingsControl(LayoutMode.Vertical); var panel = settings.Controls[0]; var button = panel.Controls.OfType<Button>().Single(b => b.Text == "Print Test Receipt"); typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty }); Assert(p.Called.WaitOne(5000)); Assert(p.Count == 1); Assert(new Trace(p.Last).Text.Contains("SKIP")); } } });
+        Test("Manual button uses fake queue while auto printing disabled", () => { using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) { var settings = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); settings.Queue = "explicit fake"; var panel = settings.Controls[0]; var button = panel.Controls.OfType<Button>().Single(b => b.Text == "Print Test Receipt"); typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty }); Assert(p.Called.WaitOne(5000)); Assert(p.Count == 1); Assert(new Trace(p.Last).Text.Contains("SKIP")); } } });
         Test("Deterministic renderer byte snapshot", () => { var r = Custom(); var renderer = new ReceiptRenderer(); Assert(renderer.Render(r).SequenceEqual(renderer.Render(r))); var bytes = renderer.Render(SyntheticReceipt.Create()); var trace = new Trace(bytes); Directory.CreateDirectory("build"); File.WriteAllBytes("build/test-receipt.bin", bytes); File.WriteAllText("build/test-receipt.txt", trace.Text); });
+        ArchiveTests();
         Console.WriteLine("RESULT: " + passed + " passed, " + failed + " failed. No physical printer used.");
         return failed == 0 ? 0 : 1;
     }

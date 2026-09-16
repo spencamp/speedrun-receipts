@@ -43,9 +43,10 @@ namespace LiveSplit.ThermalReceipt
     {
         private readonly PrinterProfile profile;
         private readonly bool cutAfterReceipt;
+        private readonly bool printFortunes;
         public ReceiptRenderer() : this(PrinterProfiles.Pos58) { }
-        public ReceiptRenderer(PrinterProfile profile, bool cutAfterReceipt = false)
-        { if (profile == null) throw new ArgumentNullException("profile"); this.profile = profile; this.cutAfterReceipt = cutAfterReceipt; }
+        public ReceiptRenderer(PrinterProfile profile, bool cutAfterReceipt = false, bool printFortunes = true)
+        { if (profile == null) throw new ArgumentNullException("profile"); this.profile = profile; this.cutAfterReceipt = cutAfterReceipt; this.printFortunes = printFortunes; }
         private void Stat(EscPosWriter w, string label, string value)
         {
             bool small = label.Length + value.Length + 1 > profile.FontAColumns;
@@ -55,21 +56,32 @@ namespace LiveSplit.ThermalReceipt
             else { w.Line(label); foreach (string line in Format.Wrap(value, width)) w.Line(line); }
             w.FontB(false);
         }
-        private void Bar(EscPosWriter w, string text) { if (!profile.SupportsReverse) { w.Bold(true); w.Line(text.Length == 0 ? new string('-', profile.FontAColumns) : text.PadLeft((profile.FontAColumns + text.Length) / 2, '-').PadRight(profile.FontAColumns, '-')); w.Bold(false); return; } w.Reverse(true); w.Line(text.PadLeft((profile.FontAColumns + text.Length) / 2).PadRight(profile.FontAColumns)); w.Reverse(false); }
+        private void Bar(EscPosWriter w, string text)
+        {
+            int width = profile.FontAColumns;
+            if (!profile.SupportsReverse)
+            {
+                w.Bold(true);
+                w.Line(text.Length == 0 ? new string('-', width) : text.PadLeft((width + text.Length) / 2, '-').PadRight(width, '-'));
+                w.Bold(false); return;
+            }
+            w.Reverse(true); w.Line(text.PadLeft((width + text.Length) / 2).PadRight(width)); w.Reverse(false);
+        }
         private void Title(EscPosWriter w, string text)
         { bool small = Format.Ascii(text).Length > profile.FontAColumns; w.FontB(small); w.Line(Format.Fit(text, small ? profile.FontBColumns : profile.FontAColumns)); w.FontB(false); }
         public byte[] Render(ReceiptRun run)
         {
             var w = new EscPosWriter(profile); w.Initialize(); w.Center(false); w.Line(new string('-', profile.FontAColumns)); w.Line();
-            w.Center(true); w.Bold(true); Title(w, run.Game); w.Bold(false); Title(w, run.Category); w.Line();
+            w.Center(true); if (run.Archive) w.Line("ARCHIVE REPRINT"); w.Bold(true); Title(w, run.Game); w.Bold(false); Title(w, run.Category); w.Line();
             string label = run.Result == "PB" ? "NEW PB" : run.Result == "TIE" ? "PB TIED" : "";
             string time = Format.Time(run.Final, 2), hero = label.Length == 0 ? time : label + " " + time;
             w.Bold(true); w.Reverse(label.Length > 0); w.Double(true);
             if (hero.Length <= profile.FontAColumns / 2) w.Line(hero);
             else { if (label.Length > 0) w.Line(label); if (time.Length > profile.FontAColumns / 2) w.Double(false); w.Line(time); }
             w.Double(false); w.Reverse(false); w.Bold(false); w.Line(); w.Center(false);
-            if (run.PreviousPB.HasValue) { Stat(w, run.Result == "PB" ? "PREVIOUS PB" : "PB", Format.Time(run.PreviousPB, 2)); Stat(w, "TIME DIFFERENCE", Format.Delta(run.Final - run.PreviousPB)); }
-            if (run.Average.HasValue) Stat(w, run.Recent.Count + "-RUN AVERAGE", Format.Time(run.Average, 1));
+            if (run.PreviousPB.HasValue) { Stat(w, run.Result == "PB" ? "PREVIOUS PB" : run.Archive ? "PB AT RUN" : "PB", Format.Time(run.PreviousPB, 2)); Stat(w, "TIME DIFFERENCE", Format.Delta(run.Final - run.PreviousPB)); }
+            if (run.Archive && !run.HistoricalPbKnown) Stat(w, "PB AT RUN", "--");
+            if (run.Average.HasValue) Stat(w, run.Recent.Count + (run.Archive ? "-RUN AVG AT RUN" : "-RUN AVERAGE"), Format.Time(run.Average, 1));
             if (run.GoldCount > 0) Stat(w, "GOLD SPLITS", run.GoldCount.ToString());
             if (run.BestImproved) Stat(w, "SUM OF BEST", Format.Time(run.NewBest, 1) + " (" + Format.Delta(run.NewBest - run.PreviousBest) + ")");
             w.Line(); Bar(w, "SPLITS"); w.FontB(true);
@@ -87,9 +99,25 @@ namespace LiveSplit.ThermalReceipt
             foreach (var row in rows) w.Line(Format.Fit(row[0], name).PadRight(name) + " " + (row[1].Length > seg ? "--" : row[1]).PadLeft(seg) + " " + (row[2].Length > cum ? "--" : row[2]).PadLeft(cum) + " " + (row[3].Length > delta ? "--" : row[3]).PadLeft(delta));
             w.FontB(false); w.Line(); Bar(w, ""); w.Line();
             w.Line("ATTEMPT #" + run.Attempt.ToString("N0", CultureInfo.InvariantCulture));
-            w.Line(run.Finished.ToString("MMM d yyyy - h:mm tt", CultureInfo.InvariantCulture).ToUpperInvariant()); w.Line(run.TimingMethod); w.Line();
-            w.Center(true); w.Border(); w.Line(); foreach (string line in Format.Wrap(run.Fortune, profile.FontAColumns).Take(3)) w.Line(line);
-            w.Line(); w.Border(); w.Line(); w.Center(false); w.Line(new string('-', profile.FontAColumns)); w.Line(); w.Line(); w.Line();
+            string date = run.Finished.ToString("MMM d yyyy - h:mm tt", CultureInfo.InvariantCulture).ToUpperInvariant();
+            if (run.Archive)
+            {
+                Title(w, run.RunDateKnown ? "RUN " + date : "RUN DATE UNKNOWN");
+                if (run.Reprinted.HasValue && (!run.RunDateKnown || run.Reprinted.Value.Date != run.Finished.Date))
+                {
+                    w.FontB(true);
+                    foreach (string line in Format.Wrap("REPRINTED " + run.Reprinted.Value.ToString("MMM d yyyy - h:mm tt", CultureInfo.InvariantCulture).ToUpperInvariant(), profile.FontBColumns)) w.Line(line);
+                    w.FontB(false);
+                }
+            }
+            else w.Line(date);
+            w.Line(run.TimingMethod); w.Line();
+            if (printFortunes)
+            {
+                w.Center(true); w.Border(); w.Line(); foreach (string line in Format.Wrap(run.Fortune, profile.FontAColumns).Take(3)) w.Line(line);
+                w.Line(); w.Border(); w.Line(); w.Center(false);
+            }
+            w.Line(new string('-', profile.FontAColumns)); w.Line(); w.Line(); w.Line();
             if (cutAfterReceipt) w.Cut();
             return w.Finish();
         }

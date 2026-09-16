@@ -20,5 +20,5 @@ if (!$SkipTests) {
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 }
 Copy-Item "$PSScriptRoot\README.md","$PSScriptRoot\IMPLEMENTATION_NOTES.md" (Split-Path $dist)
-Compress-Archive -Path $dist,"$PSScriptRoot\dist\README.md","$PSScriptRoot\dist\IMPLEMENTATION_NOTES.md" -DestinationPath "$PSScriptRoot\dist\LiveSplit.ThermalReceipt-1.0.0.zip" -Force
+Compress-Archive -Path $dist,"$PSScriptRoot\dist\README.md","$PSScriptRoot\dist\IMPLEMENTATION_NOTES.md" -DestinationPath "$PSScriptRoot\dist\LiveSplit.ThermalReceipt-1.1.0.zip" -Force
 Write-Host "Component: $dist\LiveSplit.ThermalReceipt.dll"
