@@ -1,0 +1,17 @@
+vendor/
+build/
+dist/
+*.user
+obj/
+bin/
+.vs/
+[Dd]ebug/
+[Rr]elease/
+DerivedData/
+node_modules/
+.env
+.env.*
+!.env.example
+*.suo
+*.userosscache
+*.sln.docstates

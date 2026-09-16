@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net481</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>LiveSplit.ThermalReceipt</AssemblyName>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <LangVersion>5</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LiveSplitPath Condition="'$(LiveSplitPath)' == ''">$(MSBuildThisFileDirectory)..\vendor\runtime</LiveSplitPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="LiveSplit.Core"><HintPath>$(LiveSplitPath)\LiveSplit.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UpdateManager"><HintPath>$(LiveSplitPath)\UpdateManager.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+</Project>
