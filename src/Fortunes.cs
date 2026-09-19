@@ -16,7 +16,26 @@ namespace LiveSplit.ThermalReceipt
             "The next breakthrough will happen before the timer starts.",
             "Consistency is about to become speed.", "The segment you avoid practicing knows.",
             "The time you are looking for is closer than it seems.",
-            "Practice the part you keep hoping will go right." };
+            "Practice the part you keep hoping will go right.",
+            "Today is a good day to trust the risky strat.",
+            "A PB is closer than your splits are making it look.",
+            "Beware the run that feels “too good.”",
+            "Somewhere, a runner slower than you is practicing harder.",
+            "The split you fear most is about to become free time.",
+            "A suspiciously good run is approaching.",
+            "The time save is real. Your nerves are the problem.",
+            "Your next breakthrough will look like luck at first.",
+            "The next run will feel wrong right up until it doesn’t.",
+            "The run that looks doomed may be the one worth finishing.",
+            "Beware the attempt where everything suddenly feels easy.",
+            "One of your “bad” attempts is better than you think.",
+            "Your next gold will happen before you realize you’re on pace for it.",
+            "The run will get interesting exactly when you stop trying to force it.",
+            "Something you’ve been struggling with is about to suddenly click.",
+            "The next time everything lines up, try not to notice.",
+            "You are about to make a difficult section look ordinary.",
+            "A run you nearly abandon will give you a reason to keep going.",
+            "Beware the moment you realize the run is actually good." };
         private readonly Random random = new Random();
         private readonly Queue<int> remaining = new Queue<int>();
         public string Save() { return String.Join(",", remaining); }

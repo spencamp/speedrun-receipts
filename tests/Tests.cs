@@ -362,6 +362,26 @@ internal static class Tests
         Test("Missing GT remains unavailable rather than RTA fallback", () => { using (var f = new Fixture()) { f.Timer.Start(); f.State.AdjustedStartTime = TimeStamp.Now - T(10); f.Timer.Split(); f.Timer.Split(); f.Timer.Split(); var r = f.Receipts.Single(); Assert(r.Final == null); Assert(!r.Splits[0].Skipped); Render(r); } });
         Test("Fake printer production render path", () => { var p = new FakePrinter(); var d = new PrintDispatcher(p); d.Submit("fake", new ReceiptRenderer().Render(SyntheticReceipt.Create())); d.Drain.Wait(); Assert(p.Count == 1); new Trace(p.Last); });
         Test("Unavailable queue and printer failures contained", () => { var p = new FakePrinter { Fail = true }; var d = new PrintDispatcher(p); d.Submit("missing", new byte[] { 1 }); d.Drain.Wait(); Assert(d.Status.StartsWith("Printing failed")); Assert(p.Count == 1); p.Fail = false; d.Submit("available", new byte[] { 1 }); d.Drain.Wait(); Assert(p.Count == 2); });
+        Test("Approved fortunes are in the selection pool", () => { foreach (string fortune in new[] {
+            "Today is a good day to trust the risky strat.",
+            "A PB is closer than your splits are making it look.",
+            "Beware the run that feels “too good.”",
+            "Somewhere, a runner slower than you is practicing harder.",
+            "The split you fear most is about to become free time.",
+            "A suspiciously good run is approaching.",
+            "The time save is real. Your nerves are the problem.",
+            "Your next breakthrough will look like luck at first.",
+            "The next run will feel wrong right up until it doesn’t.",
+            "The run that looks doomed may be the one worth finishing.",
+            "Beware the attempt where everything suddenly feels easy.",
+            "One of your “bad” attempts is better than you think.",
+            "Your next gold will happen before you realize you’re on pace for it.",
+            "The run will get interesting exactly when you stop trying to force it.",
+            "Something you’ve been struggling with is about to suddenly click.",
+            "The next time everything lines up, try not to notice.",
+            "You are about to make a difficult section look ordinary.",
+            "A run you nearly abandon will give you a reason to keep going.",
+            "Beware the moment you realize the run is actually good." }) Assert(FortuneBag.Pool.Contains(fortune)); });
         Test("Fortune shuffle bag and reload", () => { var bag = new FortuneBag(); var seen = new HashSet<string>(); for (int i = 0; i < 5; i++) Assert(seen.Add(bag.Next())); var reloaded = new FortuneBag(); reloaded.Load(bag.Save()); for (int i = 5; i < FortuneBag.Pool.Length; i++) Assert(seen.Add(reloaded.Next())); Assert(seen.Count == FortuneBag.Pool.Length); Assert(FortuneBag.Pool.Contains(reloaded.Next())); });
         Test("Settings XML roundtrip and invalid state", () => { using (var s = new ReceiptSettings()) using (var copy = new ReceiptSettings()) { Assert(!s.PrintingEnabled); s.PrintingEnabled = true; s.Queue = "Queue & <name>"; s.Fortunes.Next(); var xml = new XmlDocument(); xml.AppendChild(s.Save(xml)); copy.Restore(xml.DocumentElement); Assert(copy.PrintingEnabled); Assert(copy.Queue == s.Queue); Assert(copy.Fortunes.Save() == s.Fortunes.Save()); copy.Restore(null); Assert(!copy.PrintingEnabled); } });
         Test("Component factory/load/settings/dispose smoke", () => { using (var f = new Fixture()) { var attribute = (ComponentFactoryAttribute)typeof(ReceiptFactory).Assembly.GetCustomAttributes(typeof(ComponentFactoryAttribute), false).Single(); var factory = (IComponentFactory)Activator.CreateInstance(attribute.ComponentFactoryClassType); using (var component = factory.Create(f.State)) { var doc = new XmlDocument(); component.SetSettings(component.GetSettings(doc)); Assert(component.GetSettingsControl(LayoutMode.Vertical) != null); component.Update(null, f.State, 0, 0, LayoutMode.Vertical); f.Finish(); } Assert(f.Receipts.Count == 1); } });
