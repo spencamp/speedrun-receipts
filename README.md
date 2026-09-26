@@ -1,77 +1,123 @@
-# Thermal Run Receipt for LiveSplit
+# Speedrun Receipts for LiveSplit
 
-Prints one native ESC/POS receipt when a newly observed LiveSplit attempt reaches its final split. Targets **Windows LiveSplit 1.8.37 / .NET Framework 4.8.1**, using a Windows RAW queue and an **ESC/POS receipt printer**. Printing is disabled and the printer queue is empty on first use. The known-good MJ-5890K ([non-affiliate Amazon link](https://www.amazon.com/dp/B0CRR7TWKV?lv=shuf&channelId=500&plpRedirect=mhFallback)) / POS-58 profile remains the baseline.
+Speedrun Receipts is a LiveSplit component that prints a physical receipt when you finish a speedrun.
 
-## Install and use
+Turn a completed run into a keepsake: game and category, final time, PB celebrations, splits and deltas, golds, recent performance, and an optional speedrunning fortune. Reprint older completed attempts from LiveSplit history, too.
 
-1. Close LiveSplit. Copy `dist/Components/LiveSplit.ThermalReceipt.dll` into the `Components` directory beside your **LiveSplit.exe**. The release ZIP has this directory structure already. Do not copy the development `vendor` or `build` folders into your installation.
-2. Start LiveSplit. Right-click it, choose **Edit Layout**, then **+ → Other → Thermal Run Receipt**.
-3. Open this component's **Layout Settings**. Explicitly select your receipt printer's Windows queue (or type its exact name). **Refresh printer queues** updates the list without selecting anything. Do not select an ordinary office/document printer or a PDF queue: this component sends raw ESC/POS commands, not Windows document pages. It never falls back to the Windows default printer. An empty queue disables Test Receipt and blocks automatic submission.
-4. Choose a **Printer profile** using the table below. Press **Print Test Receipt** to explicitly submit **one** synthetic receipt to test the connection.
-5. Check **Enable receipt printing**, close settings, and **Save Layout**. Start a new attempt. The final split submits its receipt in the background.
+For **Windows, LiveSplit 1.8.37, and .NET Framework 4.8.1**, with a **58mm or 80mm ESC/POS receipt printer**.
 
-Completed runs print automatically by default once receipt printing is enabled. To approve each receipt first, check **Confirm before printing completed runs** and **Save Layout**. The prompt asks, “Would you like to print your Run Receipt?” Choose **Yes** to print or **No** to skip that receipt. A skipped receipt will not prompt again on undo/re-finish.
+## What it does
 
-Resets, partial attempts, undo notifications, initialization, and loading a finished timer do not print. If the component is added/reloaded partway through an attempt, printing begins with the **next** attempt, because a trustworthy start baseline is unavailable for the current one.
+- Prints the game, category, final time, finish date, and timing method.
+- Celebrates a new personal best or an exact PB tie.
+- Includes every split, segment and cumulative times, comparison deltas, and gold markers.
+- Adds recent completed-run averages and relevant PB / Sum of Best context when available.
+- Offers optional fortunes and archive reprints of historical completed attempts.
+- Supports a known-good POS-58 profile, generic 58mm and 80mm profiles, and custom printer settings.
 
-## Printer profiles and setup
+## Download
 
-**Warning:** Choosing the wrong printer profile may result in a lot of wasted paper. Check your printer's capabilities before using **Print Test Receipt**.
+**[Download from GitHub Releases](https://github.com/spencamp/speedrun-receipts/releases)** — choose `LiveSplit.ThermalReceipt-1.1.0.zip` under **Assets**, not GitHub's source-code ZIP.
 
-| Profile | Font A / B columns | Border width | Defaults |
-| --- | --- | --- | --- |
-| POS-58 / 58mm Compatibility | 32 / 42 | 320 dots | Known-good MJ-5890K; reverse text and small standalone 24-dot borders |
-| Generic 58mm ESC/POS | 32 / 42 | 384 dots | Text separators; no reverse or graphics assumed | This is untested |
-| Generic 80mm ESC/POS | 48 / 64 | 576 dots | Same receipt with longer split names; text separators | This is untested |
-| Custom | Configurable | Configurable | Conservative until capabilities are explicitly selected | This is untested |
+The ZIP contains the component DLL, this README, and the MIT license. You do not need to build from source. If no release is listed yet, the first release is still pending.
 
-Generic profiles are compatibility-oriented starting points, **not guarantees for every ESC/POS clone**. Firmware, Font B metrics and printable area vary even among printers sold with the same paper width. Install the Windows driver and identify the correct queue yourself; the component does not detect printer models.
+## Installation
 
-Custom exposes printable dots (192–832), Font A columns (24–96), Font B columns (32–128, at least Font A), reverse support, standalone 24-dot border support, cutter support and Cut after receipt. Character widths are measured printable columns, not paper millimeters; use your printer manual and a test receipt to set them. The dot width controls only the small border, not font metrics. Do not enable 24-dot graphics merely because paper is wider. Cutter support means the printer accepts GS V 0; enable cutting separately only if your hardware supports it. Raster and Unicode capability metadata exist in the model, but output stays ASCII and never uses raster graphics, even on capable printers.
+1. **Close LiveSplit.**
+2. Extract the release ZIP. Copy `Components/LiveSplit.ThermalReceipt.dll` from the extracted `LiveSplit.ThermalReceipt-1.1.0` folder into the `Components` folder beside `LiveSplit.exe`.
+3. Open LiveSplit.
+4. Right-click LiveSplit and choose **Edit Layout → + → Other → Thermal Run Receipt**.
+5. Open the component's **Layout Settings**. Select your **Windows printer queue** and **Printer profile**. Install your receipt printer's Windows driver first if its queue is missing.
+6. Leave **Enable receipt printing** unchecked and click **Print Test Receipt**. Check the paper width, alignment, and output before continuing.
+7. Check **Enable receipt printing**, close settings, and **Save Layout**. Start a new attempt; finishing its final split will submit a receipt.
 
-If reverse or border graphics are unsupported, leave them unchecked: bold PB treatment and text section/fortune separators retain the receipt hierarchy. Numeric split columns keep their sensible widths; additional space goes to split names. Rows truncate instead of wrapping.
+**Select a receipt printer, never an office printer or PDF queue.** This component sends raw ESC/POS commands. A wrong queue or profile can produce incorrect output or waste paper. The queue starts empty, and the component never falls back to the Windows default printer.
 
-**Save Layout** persists the queue, profile, Custom values and enable state. Existing layouts retain their saved queue and use POS-58 when no profile is present; older settings cannot distinguish a previously prefilled queue from an explicitly chosen one, so check the saved queue when upgrading. New or missing queue settings remain empty. An unknown profile disables automatic printing pending setup. Refreshing queues preserves a saved queue even if temporarily disconnected; a missing queue reports failure and never redirects to another printer.
-## Build and test
+## Printer compatibility
 
-The canonical build uses Windows' installed .NET Framework C# compiler. No .NET SDK, NuGet package restore, or printer is required. .NET Framework 4.8.1 and the LiveSplit release assemblies must be installed/available.
+| Printer profile | Text columns (Font A / B) | Best use |
+| --- | --- | --- |
+| POS-58 / 58mm Compatibility | 32 / 42 | Known-good [MJ-5890K](https://www.amazon.com/dp/B0CRR7TWKV?lv=shuf&channelId=500&plpRedirect=mhFallback) baseline (non-affiliate link); reverse text and small 320-dot borders |
+| Generic 58mm ESC/POS | 32 / 42 | Other 58mm printers; conservative text separators |
+| Generic 80mm ESC/POS | 48 / 64 | Wider printers and longer split names; text separators |
+| Custom | Configurable | Measured widths and explicitly supported printer capabilities |
 
-From this folder in PowerShell:
+Generic ESC/POS compatibility varies by hardware and firmware. Paper width alone does not guarantee compatible fonts, printable area, graphics, or cutting. The component does not detect printer models. Start with a suitable profile and test your own printer before enabling automatic printing.
+
+## Settings / features
+
+| Setting or action | What it does |
+| --- | --- |
+| **Enable receipt printing** | Automatically prints newly observed completed attempts. Off by default. |
+| **Confirm before printing completed runs** | Asks before each automatic receipt. Choosing No skips it; undo/re-finish does not ask again. |
+| **Print fortunes** | Includes an optional fortune and its borders. On by default; fortunes are random and may repeat. |
+| **Print Test Receipt** | Sends one sample receipt to your selected queue, even with automatic printing off. |
+| **ARCHIVE / RECEIPT HISTORY** | Selects an older completed attempt for an explicit reprint. |
+| **Custom** printer profile | Configures printable dots, Font A/B columns, reverse text, and standalone 24-dot borders. Use your printer manual and a test receipt. |
+| **Supports ESC/POS cutter (GS V 0)** + **Cut after receipt** | Enables cutting only when both are selected under Custom and your hardware supports it. |
+
+Use **Save Layout** to keep your settings. Updates are manual: close LiveSplit and replace the component DLL with the newer release's DLL.
+
+## Archive reprints
+
+In **Layout Settings → ARCHIVE / RECEIPT HISTORY**, choose **REAL TIME** or **GAME TIME**, select a completed attempt, and click **Print Selected Receipt**. Use **Refresh completed attempts** to reload the list. LiveSplit normally adds a finished attempt to history when the timer is reset.
+
+Selecting or refreshing does not print. Reprints work with automatic printing off and use your current queue, profile, and fortune setting. Receipts are marked **ARCHIVE REPRINT**.
+
+History is **reconstructed from LiveSplit's retained data**, not an immutable receipt database. Edited, imported, or deleted history can leave gaps; unknown values stay unavailable. Names come from the current route, historical PBs are inferred from earlier completions, and the original fortune is not restored. See [archive reconstruction details](https://github.com/spencamp/speedrun-receipts/blob/main/docs/technical-details.md#archive-reconstruction) for the full limitations.
+
+## Troubleshooting
+
+| Problem | What to check |
+| --- | --- |
+| No queue / test button disabled | Install the Windows printer driver, click **Refresh printer queues**, and select the receipt printer or type its exact queue name. An empty queue blocks printing. |
+| Nothing prints or output is garbled | Confirm the queue belongs to an ESC/POS receipt printer and its driver/connection accepts RAW ESC/POS data. Check the Windows print queue, connection, power, and paper. |
+| Text clips or paper feeds unexpectedly | Check **Printer profile** and measured widths. Disable automatic printing and use **Print Test Receipt** to verify settings. |
+| A completed run did not print | Enable printing, save the layout, and start a new attempt. Adding/reloading the component during an attempt waits until the next one. Resets and incomplete runs do not print. |
+| An old attempt is missing | Reset the finished timer, refresh completed attempts, and check the selected timing method has a stored final time. |
+| Status says sent, but there is no receipt | “Sent to Windows spooler” means Windows accepted the RAW job; it does not guarantee physical printing. Inspect the queue and printer before deliberately printing again. |
+
+Logs: `%LOCALAPPDATA%\LiveSplit\ThermalReceipt\receipt.log`.
+
+There is **no automatic retry**. Undoing and re-finishing an attempt does not submit another automatic receipt. Printer failures do not reset or modify your run.
+
+## Building from source
+
+Developer information: normal installation uses the release ZIP above.
+
+Use Windows with **.NET Framework 4.8.1** and the **LiveSplit 1.8.37** release assemblies. The validated build uses the installed Framework C# compiler; it needs no .NET SDK, NuGet restore, or physical printer.
+
+From the repository folder in PowerShell:
 
 ```powershell
-# One-time download of official, SHA-256-pinned LiveSplit 1.8.37:
+# Download and verify the pinned official LiveSplit 1.8.37 archive:
 .\bootstrap.ps1
 
-# Compile component, compile tests, run all tests, and package:
+# Compile, run the full test suite, then package:
 .\build.ps1
 
-# Or use your already-extracted LiveSplit release:
+# Alternatively, use an existing extracted LiveSplit 1.8.37 installation:
 .\build.ps1 -LiveSplitPath 'C:\Tools\LiveSplit'
 ```
 
 Outputs:
 
-- `dist/Components/LiveSplit.ThermalReceipt.dll` — the only DLL to install.
-- `dist/LiveSplit.ThermalReceipt-1.1.0.zip` — component plus installation/engineering notes.
-- `build/ThermalReceipt.Tests.exe` — framework test executable using fake printers.
-- `build/test-results.txt` — latest automated results.
-- `build/test-receipt.txt` — extracted receipt text for inspection; native styles/borders are not represented.
-- `build/test-receipt.bin` — ESC/POS debug artifact; it is never automatically sent anywhere.
+- `dist/Components/LiveSplit.ThermalReceipt.dll` — installable component.
+- `dist/LiveSplit.ThermalReceipt-1.1.0.zip` — release package.
+- `build/test-results.txt` — test results; tests use fake printers.
+- `build/test-receipt.txt` and `build/test-receipt.bin` — diagnostic test output, excluded from the ZIP.
 
-`-SkipTests` is available for a compilation-only iteration. Run without it before release. The optional SDK project `src/LiveSplit.ThermalReceipt.csproj` supports IDE use with a .NET SDK and the 4.8.1 Developer Pack; the no-SDK PowerShell build is the validated release path. Test scripts never invoke `WindowsRawPrinter.Print` or enumerate actual printer queues.
+Do not use `-SkipTests` for release builds. The optional `src/LiveSplit.ThermalReceipt.csproj` supports IDE builds with a .NET SDK and the 4.8.1 Developer Pack. See [maintenance and release details](https://github.com/spencamp/speedrun-receipts/blob/main/docs/technical-details.md#maintenance-and-release).
 
-## Receipt behavior
+## Technical details / limitations
 
-Uses the newer Markdown handoff's text-only design: startup rule, game/category, large completed time, native reverse PB/tie callout, conditional context, Font B split table, metadata, and two small standalone `ESC *` fortune borders. No large raster, custom glyph, code-page, or inline-image commands exist. Profiles without reverse or 24-dot support use text fallbacks. Cutting requires both Custom cutter support and an explicit Cut after receipt opt-in.
+- Output uses native ESC/POS text and ASCII-compatible characters, not full Unicode or full-receipt images. Long names may be truncated.
+- PB context comes from attempt start; split deltas use the comparison selected at completion. Missing timing data is never replaced with another timing method.
+- There is no separate receipt database, crash recovery, or automatic update service.
+- Automated tests do not certify physical output. Generic profiles and custom settings require testing on the target printer; other LiveSplit versions are unvalidated.
 
-PB context uses the record at attempt start. Split deltas use the comparison selected at completion. Recent averages use up to nine previous completed LiveSplit attempts plus the current result. Missing selected-method times remain `--`; they never silently become times from another timing method. Golds use LiveSplit's best-segment test. Skipped rows remain visible; the immediately following segment duration is unavailable instead of showing a combined duration.
+[Technical details](https://github.com/spencamp/speedrun-receipts/blob/main/docs/technical-details.md) cover calculations, history limits, and maintenance.
 
-**Print fortunes** is on by default in component settings. Uncheck it to remove the fortune text if you want to save paper. **Save Layout** preserves your choice.
+## License
 
-## Archive Reprint
-
-Open **Layout Settings → ARCHIVE / RECEIPT HISTORY**. Choose **REAL TIME** or **GAME TIME**, select a completed attempt, and press **Print Selected Receipt**. The list shows local completion date/time, final time and LiveSplit history attempt ID. Refresh reloads history; LiveSplit normally adds a finished attempt to history when the timer is reset. Selecting or refreshing never prints. Archive printing works with automatic printing disabled, requires an explicit queue, and uses the current printer profile and fortune setting.
-
-Receipts say **ARCHIVE REPRINT**, use **VS PB** against the earliest retained attempt with the fastest earlier final time for the chosen method, and show **PB AT RUN** (or **PREVIOUS PB**), historical time difference, and up to ten completions ending at the selected attempt. Later attempts and current PB/best-segment fields are never calculation inputs. Gold markers compare reconstructable individual durations with earlier dated segment history, including partial attempts. Post-skip combined times are never presented as individual segments or awarded individual golds. Each print randomly selects a fortune from the approved pool, with repeats allowed; disabled fortunes skip selection.
-
-The original stored completion timestamp is labeled RUN; REPRINTED appears for a different local calendar date. Missing completion dates explicitly say RUN DATE UNKNOWN. No receipt database or snapshots are created.
+Speedrun Receipts is available under the [MIT License](LICENSE).

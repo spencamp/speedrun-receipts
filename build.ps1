@@ -19,6 +19,17 @@ if (!$SkipTests) {
     finally { Pop-Location }
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
 }
-Copy-Item "$PSScriptRoot\README.md","$PSScriptRoot\IMPLEMENTATION_NOTES.md" (Split-Path $dist)
-Compress-Archive -Path $dist,"$PSScriptRoot\dist\README.md","$PSScriptRoot\dist\IMPLEMENTATION_NOTES.md" -DestinationPath "$PSScriptRoot\dist\LiveSplit.ThermalReceipt-1.1.0.zip" -Force
+# Package an explicit allowlist; stale files in dist must never ship.
+Add-Type -AssemblyName System.IO.Compression,System.IO.Compression.FileSystem
+$packageName = 'LiveSplit.ThermalReceipt-1.1.0'
+$package = Join-Path $PSScriptRoot "dist\$packageName.zip"
+if (Test-Path -LiteralPath $package) { Remove-Item -LiteralPath $package }
+$zip = [System.IO.Compression.ZipFile]::Open($package, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, "$dist\LiveSplit.ThermalReceipt.dll", "$packageName/Components/LiveSplit.ThermalReceipt.dll") | Out-Null
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, "$PSScriptRoot\README.md", "$packageName/README.md") | Out-Null
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, "$PSScriptRoot\LICENSE", "$packageName/LICENSE") | Out-Null
+}
+finally { $zip.Dispose() }
+Write-Host "Package: $package"
 Write-Host "Component: $dist\LiveSplit.ThermalReceipt.dll"
