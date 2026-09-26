@@ -126,7 +126,7 @@ namespace LiveSplit.ThermalReceipt
         public XmlNode Save(XmlDocument document)
         {
             var root = document.CreateElement("Settings");
-            foreach (var item in new[] { new[] { "Version", "2" }, new[] { "Enabled", PrintingEnabled.ToString() }, new[] { "PrinterQueue", Queue }, new[] { "FortuneBag", Fortunes.Save() },
+            foreach (var item in new[] { new[] { "Version", "2" }, new[] { "Enabled", PrintingEnabled.ToString() }, new[] { "PrinterQueue", Queue },
                 new[] { "ConfirmBeforePrinting", ConfirmBeforePrinting.ToString() },
                 new[] { "PrintFortunes", PrintFortunes.ToString() },
                 new[] { "PrinterProfile", ProfileId }, new[] { "PrintableDots", dots.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) },
@@ -141,7 +141,7 @@ namespace LiveSplit.ThermalReceipt
             bool value; PrintingEnabled = Boolean.TryParse(Read(root, "Enabled"), out value) && value;
             ConfirmBeforePrinting = Flag(root, "ConfirmBeforePrinting");
             PrintFortunes = !Boolean.TryParse(Read(root, "PrintFortunes"), out value) || value;
-            Queue = Read(root, "PrinterQueue") ?? ""; Fortunes.Load(Read(root, "FortuneBag"));
+            Queue = Read(root, "PrinterQueue") ?? "";
             ProfileId = Read(root, "PrinterProfile");
             dots.Value = Number(root, "PrintableDots", 384, 192, 832);
             fontA.Value = Number(root, "FontAColumns", 32, 24, 96);
@@ -191,7 +191,7 @@ namespace LiveSplit.ThermalReceipt
             {
                 if (disposed || String.IsNullOrWhiteSpace(settings.Queue)) throw new InvalidOperationException("Select a printer queue first.");
                 if (!ReferenceEquals(listedRun, state.Run)) { RefreshHistory(); throw new InvalidOperationException("The loaded run changed. Select an attempt from the refreshed list."); }
-                // Validate/reconstruct before consuming a fortune; never touch automatic completion claims.
+                // Validate/reconstruct before selecting a fortune; never touch automatic completion claims.
                 var run = history.Reconstruct(state.Run, attempt, method, DateTime.Now, "");
                 run = new ReceiptRun(run.Game, run.Category, run.Final, run.PreviousPB, run.PreviousBest, run.NewBest,
                     run.Comparison, run.TimingMethod, run.Attempt, run.Finished, run.Splits, run.Recent,

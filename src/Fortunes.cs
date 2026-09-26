@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace LiveSplit.ThermalReceipt
 {
@@ -37,22 +35,9 @@ namespace LiveSplit.ThermalReceipt
             "A run you nearly abandon will give you a reason to keep going.",
             "Beware the moment you realize the run is actually good." };
         private readonly Random random = new Random();
-        private readonly Queue<int> remaining = new Queue<int>();
-        public string Save() { return String.Join(",", remaining); }
-        public void Load(string saved)
-        {
-            remaining.Clear(); var seen = new HashSet<int>();
-            foreach (string value in (saved ?? "").Split(',')) { int index; if (Int32.TryParse(value, out index) && index >= 0 && index < Pool.Length && seen.Add(index)) remaining.Enqueue(index); }
-        }
         public string Next()
         {
-            if (remaining.Count == 0)
-            {
-                int[] bag = Enumerable.Range(0, Pool.Length).ToArray();
-                for (int i = bag.Length - 1; i > 0; i--) { int j = random.Next(i + 1); int t = bag[i]; bag[i] = bag[j]; bag[j] = t; }
-                foreach (int i in bag) remaining.Enqueue(i);
-            }
-            return Pool[remaining.Dequeue()];
+            return Pool[random.Next(Pool.Length)];
         }
     }
     public static class SyntheticReceipt

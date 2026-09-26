@@ -95,6 +95,8 @@ internal static class Tests
         public string Text { get { return String.Join("\n", Lines); } }
     }
     private static Trace Render(ReceiptRun receipt) { return new Trace(new ReceiptRenderer().Render(receipt)); }
+    private static void AssertPoolFortune(Trace trace)
+    { Assert(FortuneBag.Pool.Any(fortune => trace.Text.Contains(String.Join("\n", Format.Wrap(fortune, PrinterProfiles.Pos58.FontAColumns))))); }
     private static ReceiptRun Custom(double final = 1122.37, double? pb = 1135.62, int golds = 0, int count = 3,
         double? oldBest = 1100, double? newBest = 1100, string comparison = "Personal Best", string method = "REAL TIME",
         string game = "GAME", string category = "CATEGORY", string fortune = "A new PB is on the horizon.")
@@ -152,16 +154,23 @@ internal static class Tests
         Test("Archive history list sorts indices rather than storage or timestamp", () => { var run = ArchiveFixture(); var a = run.AttemptHistory[0]; run.AttemptHistory.RemoveAt(0); run.AttemptHistory.Add(a); Assert(new HistoricalReceiptReconstructor().Completed(run, TimingMethod.GameTime)[0].Index == 5 && Archive(run, 3).PreviousPB == T(280)); });
         Test("Archive source data unchanged", () => { var run = ArchiveFixture(); var time = run[0].PersonalBestSplitTime; Archive(run, 3); Assert(run[0].PersonalBestSplitTime.Equals(time) && run[0].SegmentHistory.Count == 5); });
         Test("Archive widths safe for every profile", () => { foreach (var p in PrinterProfiles.All) new Trace(new ReceiptRenderer(p).Render(Archive(ArchiveFixture(), 3)), p); });
-        Test("Archive explicit print gets fresh shuffle bag fortune and isolates live claims", () => {
-            using (var f = new Fixture()) using (var c = new ReceiptComponent(f.State, new FakePrinter())) {
+        Test("Archive explicit prints select pool fortunes and isolate live claims", () => {
+            var p = new FakePrinter();
+            using (var f = new Fixture()) using (var c = new ReceiptComponent(f.State, p)) {
                 var run = ArchiveFixture(); foreach (var a in run.AttemptHistory) f.State.Run.AttemptHistory.Add(a);
                 for (int i = 0; i < 3; i++) foreach (var h in run[i].SegmentHistory) f.State.Run[i].SegmentHistory.Add(h.Key, h.Value);
                 var settings = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); settings.Queue = "fake";
-                string bag = settings.Fortunes.Save(); c.PrintArchive(2, TimingMethod.GameTime); Assert(settings.Fortunes.Save() != bag);
+                var d = (PrintDispatcher)typeof(ReceiptComponent).GetField("dispatcher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(c);
+                for (int i = 0; i < 5; i++) {
+                    c.PrintArchive(2, TimingMethod.GameTime); d.Drain.Wait(); Assert(p.Count == i + 1);
+                    AssertPoolFortune(new Trace(p.Last));
+                }
+                settings.PrintFortunes = false; c.PrintArchive(2, TimingMethod.GameTime); d.Drain.Wait();
+                Assert(p.Count == 6); new Trace(p.Last, expectFortunes: false);
                 f.Finish(); Assert(f.Receipts.Count == 1); f.Timer.UndoSplit(); f.Split(270); Assert(f.Receipts.Count == 1);
             }
         });
-        Test("Archive missing queue rejects before fortune consumption", () => { using (var f = new Fixture()) { var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) { var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); string bag = s.Fortunes.Save(); c.PrintArchive(1, TimingMethod.GameTime); Assert(p.Count == 0 && s.Fortunes.Save() == bag); } } });
+        Test("Archive missing queue rejects printing", () => { using (var f = new Fixture()) { var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) { c.GetSettingsControl(LayoutMode.Vertical); c.PrintArchive(1, TimingMethod.GameTime); Assert(p.Count == 0); } } });
         Test("Archive printer failure stays in dispatcher", () => { using (var f = new Fixture()) { var p = new FakePrinter { Fail = true }; f.State.Run.AttemptHistory.Add(new Attempt(1, TT(300), null, null, null)); using (var c = new ReceiptComponent(f.State, p)) { var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); s.Queue = "fake"; c.PrintArchive(1, TimingMethod.GameTime); Assert(p.Called.WaitOne(3000)); Assert(f.State.Run.AttemptHistory.Count == 1); } } });
     }
 
@@ -185,16 +194,19 @@ internal static class Tests
                 Assert(off.Lines.Skip(metadataEnd).SequenceEqual(new[] { new string('-', profile.FontAColumns), "", "", "" }));
             }
         });
-        Test("Automatic and manual receipts honor fortunes off without consuming bag", () => {
+        Test("Automatic and manual receipts honor fortunes toggle", () => {
             using (var f = new Fixture()) { f.Capture.Dispose(); var p = new FakePrinter(); using (var c = new ReceiptComponent(f.State, p)) {
                 var s = (ReceiptSettings)c.GetSettingsControl(LayoutMode.Vertical); s.Queue = "fake"; s.PrintingEnabled = true; s.PrintFortunes = false;
-                s.Fortunes.Next(); string bag = s.Fortunes.Save(); f.Finish();
+                f.Finish();
                 var d = (PrintDispatcher)typeof(ReceiptComponent).GetField("dispatcher", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(c);
-                d.Drain.Wait(); Assert(p.Count == 1); new Trace(p.Last, expectFortunes: false); Assert(s.Fortunes.Save() == bag);
+                d.Drain.Wait(); Assert(p.Count == 1); new Trace(p.Last, expectFortunes: false);
                 var button = s.Controls[0].Controls.OfType<Button>().Single(b => b.Text == "Print Test Receipt");
                 typeof(Button).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(button, new object[] { EventArgs.Empty });
-                d.Drain.Wait(); Assert(p.Count == 2); new Trace(p.Last, expectFortunes: false); Assert(s.Fortunes.Save() == bag);
-                s.PrintFortunes = true; f.Timer.Reset(); f.Finish(); d.Drain.Wait(); Assert(p.Count == 3); new Trace(p.Last); Assert(s.Fortunes.Save() != bag);
+                d.Drain.Wait(); Assert(p.Count == 2); new Trace(p.Last, expectFortunes: false);
+                s.PrintFortunes = true;
+                for (int i = 0; i < 5; i++) {
+                    f.Timer.Reset(); f.Finish(); d.Drain.Wait(); Assert(p.Count == i + 3); AssertPoolFortune(new Trace(p.Last));
+                }
             } }
         });
         Test("Confirmation defaults off and persists in layout settings", () => {
@@ -382,8 +394,35 @@ internal static class Tests
             "You are about to make a difficult section look ordinary.",
             "A run you nearly abandon will give you a reason to keep going.",
             "Beware the moment you realize the run is actually good." }) Assert(FortuneBag.Pool.Contains(fortune)); });
-        Test("Fortune shuffle bag and reload", () => { var bag = new FortuneBag(); var seen = new HashSet<string>(); for (int i = 0; i < 5; i++) Assert(seen.Add(bag.Next())); var reloaded = new FortuneBag(); reloaded.Load(bag.Save()); for (int i = 5; i < FortuneBag.Pool.Length; i++) Assert(seen.Add(reloaded.Next())); Assert(seen.Count == FortuneBag.Pool.Length); Assert(FortuneBag.Pool.Contains(reloaded.Next())); });
-        Test("Settings XML roundtrip and invalid state", () => { using (var s = new ReceiptSettings()) using (var copy = new ReceiptSettings()) { Assert(!s.PrintingEnabled); s.PrintingEnabled = true; s.Queue = "Queue & <name>"; s.Fortunes.Next(); var xml = new XmlDocument(); xml.AppendChild(s.Save(xml)); copy.Restore(xml.DocumentElement); Assert(copy.PrintingEnabled); Assert(copy.Queue == s.Queue); Assert(copy.Fortunes.Save() == s.Fortunes.Save()); copy.Restore(null); Assert(!copy.PrintingEnabled); } });
+        Test("Repeated fortune selections stay in pool without saved state", () => {
+            for (int instance = 0; instance < 3; instance++) {
+                var bag = new FortuneBag();
+                for (int i = 0; i < FortuneBag.Pool.Length * 10; i++) Assert(FortuneBag.Pool.Contains(bag.Next()));
+            }
+        });
+        Test("Settings XML roundtrip is independent of fortune selections", () => {
+            using (var s = new ReceiptSettings()) using (var copy = new ReceiptSettings()) {
+                Assert(!s.PrintingEnabled); s.PrintingEnabled = true; s.Queue = "Queue & <name>"; s.PrintFortunes = false;
+                var xml = new XmlDocument(); xml.AppendChild(s.Save(xml));
+                Assert(xml.DocumentElement.SelectSingleNode("FortuneBag") == null);
+                for (int i = 0; i < 100; i++) s.Fortunes.Next();
+                Assert(s.Save(new XmlDocument()).OuterXml == xml.DocumentElement.OuterXml);
+                copy.Restore(xml.DocumentElement); Assert(copy.PrintingEnabled && !copy.PrintFortunes); Assert(copy.Queue == s.Queue);
+                Assert(copy.Save(new XmlDocument()).OuterXml == xml.DocumentElement.OuterXml);
+                Assert(FortuneBag.Pool.Contains(copy.Fortunes.Next()));
+                copy.Restore(null); Assert(!copy.PrintingEnabled);
+            }
+        });
+        Test("Legacy fortune bag settings are ignored and removed on save", () => {
+            using (var s = new ReceiptSettings()) {
+                foreach (string saved in new[] { "0,1,2", "invalid,-1,999", "" }) {
+                    var xml = new XmlDocument(); xml.LoadXml("<Settings><PrintFortunes>false</PrintFortunes><FortuneBag>" + saved + "</FortuneBag></Settings>");
+                    s.Restore(xml.DocumentElement); Assert(!s.PrintFortunes);
+                    Assert(s.Save(new XmlDocument()).SelectSingleNode("FortuneBag") == null);
+                    for (int i = 0; i < 100; i++) Assert(FortuneBag.Pool.Contains(s.Fortunes.Next()));
+                }
+            }
+        });
         Test("Component factory/load/settings/dispose smoke", () => { using (var f = new Fixture()) { var attribute = (ComponentFactoryAttribute)typeof(ReceiptFactory).Assembly.GetCustomAttributes(typeof(ComponentFactoryAttribute), false).Single(); var factory = (IComponentFactory)Activator.CreateInstance(attribute.ComponentFactoryClassType); using (var component = factory.Create(f.State)) { var doc = new XmlDocument(); component.SetSettings(component.GetSettings(doc)); Assert(component.GetSettingsControl(LayoutMode.Vertical) != null); component.Update(null, f.State, 0, 0, LayoutMode.Vertical); f.Finish(); } Assert(f.Receipts.Count == 1); } });
         Test("Actual LiveSplit component loader", () => { var factory = ComponentManager.LoadFactory<IComponentFactory>(typeof(ReceiptFactory).Assembly.Location); Assert(factory != null); Assert(factory.ComponentName == "Thermal Run Receipt"); });
         Test("Exact PB decision uses ticks not display rounding", () => { var r = Custom(1135.619, 1135.62); Assert(r.Result == "PB"); Assert(Format.Time(r.Final, 2) == Format.Time(r.PreviousPB, 2)); });

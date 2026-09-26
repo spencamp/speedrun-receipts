@@ -1151,14 +1151,7 @@ The final tested fortune used 2 lines.
 
 # 36. Fortune Selection
 
-Recommended behavior: shuffle bag.
-
-A shuffle bag means:
-
-1. shuffle the full fortune pool
-2. use each fortune once
-3. do not repeat until all have been used
-4. reshuffle when exhausted
+Select a random fortune from the full approved pool each time a completed run or archive reprint needs one. Repeats are allowed. Use one long-lived Random instance per FortuneBag; do not persist selection state in layout settings. Disabled fortunes skip selection.
 
 The fortune should not depend on run performance.
 

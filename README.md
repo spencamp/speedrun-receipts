@@ -70,7 +70,7 @@ PB context uses the record at attempt start. Split deltas use the comparison sel
 
 **Print fortunes** is on by default in component settings. Uncheck it to remove the fortune text and both surrounding borders (including text fallback borders) from completed runs and Test Receipt. **Save Layout** preserves your choice. The receipt's closing rule and tear feed remain.
 
-Fortunes cycle through a shuffle bag, independently of performance. Turning fortunes off pauses the bag without consuming entries. The remaining bag is serialized in the layout settings. **Save Layout** checkpoints the bag; reloading an older unsaved layout can restore an older bag position. There is no separate run-performance database.
+Each fortune is selected randomly from the approved pool, independently of performance; repeats are allowed. Turning fortunes off skips selection. No fortune-selection state is saved in layout settings, so closing and reopening LiveSplit does not restore an earlier selection position. There is no separate run-performance database.
 
 ## Physical validation still required
 
@@ -83,7 +83,7 @@ For transport trouble, check the component log and Windows queue before delibera
 
 Open **Layout Settings → ARCHIVE / RECEIPT HISTORY**. Choose **REAL TIME** or **GAME TIME**, select a completed attempt, and press **Print Selected Receipt**. The list shows local completion date/time, final time and LiveSplit history attempt ID. Refresh reloads history; LiveSplit normally adds a finished attempt to history when the timer is reset. Selecting or refreshing never prints. Archive printing works with automatic printing disabled, requires an explicit queue, and uses the current printer profile and fortune setting.
 
-Receipts say **ARCHIVE REPRINT**, use **VS PB** against the earliest retained attempt with the fastest earlier final time for the chosen method, and show **PB AT RUN** (or **PREVIOUS PB**), historical time difference, and up to ten completions ending at the selected attempt. Later attempts and current PB/best-segment fields are never calculation inputs. Gold markers compare reconstructable individual durations with earlier dated segment history, including partial attempts. Post-skip combined times are never presented as individual segments or awarded individual golds. Each print selects a fresh fortune through the normal shuffle bag; disabled fortunes consume nothing.
+Receipts say **ARCHIVE REPRINT**, use **VS PB** against the earliest retained attempt with the fastest earlier final time for the chosen method, and show **PB AT RUN** (or **PREVIOUS PB**), historical time difference, and up to ten completions ending at the selected attempt. Later attempts and current PB/best-segment fields are never calculation inputs. Gold markers compare reconstructable individual durations with earlier dated segment history, including partial attempts. Post-skip combined times are never presented as individual segments or awarded individual golds. Each print randomly selects a fortune from the approved pool, with repeats allowed; disabled fortunes skip selection.
 
 The original stored completion timestamp is labeled RUN; REPRINTED appears for a different local calendar date. Missing completion dates explicitly say RUN DATE UNKNOWN. No receipt database or snapshots are created.
 
