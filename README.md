@@ -19,7 +19,7 @@ For **Windows, LiveSplit 1.8.37, and .NET Framework 4.8.1**, with a **58mm or 80
 
 **[Download from GitHub Releases](https://github.com/spencamp/speedrun-receipts/releases)** — choose `LiveSplit.ThermalReceipt-1.1.0.zip` under **Assets**, not GitHub's source-code ZIP.
 
-The ZIP contains the component DLL, this README, and the MIT license. You do not need to build from source. If no release is listed yet, the first release is still pending.
+The ZIP contains the component DLL, this README, and the MIT license. You do not need to build from source.
 
 ## Installation
 
